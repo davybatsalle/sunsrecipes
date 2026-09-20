@@ -455,8 +455,16 @@ private fun FamilySelector(value: String, fallback: String, onChange: (List<Stri
     }
 }
 
-private fun frenchIngredientText(recipe: RecipeEntity): String = RecipeContent.decodeIngredients(recipe.ingredientsFrenchJson)
-    .joinToString("\n") { it.name }
+private fun frenchIngredientText(recipe: RecipeEntity): String {
+    val frenchIngredients = RecipeContent.decodeIngredients(recipe.ingredientsFrenchJson)
+    val ingredients = RecipeContent.decodeIngredients(recipe.ingredientsJson)
+    val editableIngredients = if (frenchIngredients.size >= ingredients.size || ingredients.isEmpty()) {
+        frenchIngredients
+    } else {
+        ingredients
+    }
+    return editableIngredients.joinToString("\n") { it.name }
+}
 
 private fun RecipeEntity.withFrenchIngredients(value: String): RecipeEntity {
     val ingredients = value.lines().mapNotNull { line ->
@@ -464,6 +472,7 @@ private fun RecipeEntity.withFrenchIngredients(value: String): RecipeEntity {
         cleanLine.takeIf(String::isNotBlank)?.let(::RecipeIngredient)
     }
     return copy(
+        ingredientsJson = RecipeContent.encodeIngredients(ingredients),
         ingredientsFrenchJson = RecipeContent.encodeIngredients(ingredients),
         ingredientOne = ingredients.getOrNull(0)?.name.orEmpty(),
         ingredientTwo = ingredients.getOrNull(1)?.name.orEmpty()

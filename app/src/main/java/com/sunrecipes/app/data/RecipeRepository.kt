@@ -5,6 +5,7 @@ import android.net.Uri
 import android.provider.DocumentsContract
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
@@ -23,8 +24,32 @@ class RecipeRepository(private val context: Context) {
     private val importPreferences = context.getSharedPreferences("recipe_imports", Context.MODE_PRIVATE)
     private val importMutex = Mutex()
 
-    fun observeRecipes(query: String): Flow<List<RecipeEntity>> =
-        if (query.isBlank()) dao.observeAll() else dao.search(normalize(query.trim()))
+    fun observeRecipes(query: String): Flow<List<RecipeEntity>> {
+        val terms = query.trim().split(Regex("\\s+")).filter(String::isNotBlank).map(::normalize)
+        return dao.observeAll().map { recipes ->
+            if (terms.isEmpty()) {
+                recipes
+            } else {
+                recipes.filter { recipe ->
+                    val searchableText = normalize(
+                        listOf(
+                            recipe.name,
+                            recipe.nameFrench,
+                            recipe.ingredientOne,
+                            recipe.ingredientTwo,
+                            recipe.family,
+                            recipe.familiesJson,
+                            recipe.searchAliases,
+                            recipe.ocrText,
+                            recipe.ingredientsJson,
+                            recipe.ingredientsFrenchJson
+                        ).joinToString(" ")
+                    )
+                    terms.all(searchableText::contains)
+                }
+            }
+        }
+    }
 
     suspend fun save(recipe: RecipeEntity) = dao.insert(recipe.withFingerprint())
 
