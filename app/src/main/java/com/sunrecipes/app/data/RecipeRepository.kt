@@ -9,7 +9,9 @@ import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import android.util.Base64
+import android.util.JsonReader
 import java.io.File
+import java.io.InputStreamReader
 import java.security.MessageDigest
 import java.text.Normalizer
 import org.json.JSONArray
@@ -23,9 +25,9 @@ class RecipeRepository(private val context: Context) {
     fun observeRecipes(query: String): Flow<List<RecipeEntity>> =
         if (query.isBlank()) dao.observeAll() else dao.search(normalize(query.trim()))
 
-    suspend fun save(recipe: RecipeEntity) = dao.insert(recipe)
+    suspend fun save(recipe: RecipeEntity) = dao.insert(recipe.withFingerprint())
 
-    suspend fun update(recipe: RecipeEntity) = dao.update(recipe)
+    suspend fun update(recipe: RecipeEntity) = dao.update(recipe.withFingerprint())
 
     suspend fun delete(recipe: RecipeEntity) = dao.delete(recipe)
 
@@ -48,41 +50,78 @@ class RecipeRepository(private val context: Context) {
 
     suspend fun importFrom(uri: Uri): Int = importMutex.withLock {
         withContext(Dispatchers.IO) {
-        val backupBytes = context.contentResolver.openInputStream(uri)?.use { it.readBytes() }
-            ?: error("Impossible de lire le fichier de backup")
-        val backupHash = backupBytes.sha256()
+        val backupHash = uri.sha256()
         val importedBackups = importPreferences.getStringSet("sha256", emptySet()).orEmpty()
         if (backupHash in importedBackups) return@withContext 0
 
-        val content = backupBytes.toString(Charsets.UTF_8)
         var imported = 0
-        var lineIndex = 0
-        content.lineSequence().forEach { rawLine ->
-            val line = rawLine.trim().removePrefix("\uFEFF")
-            if (!line.startsWith("{")) return@forEach
-            val item = JSONObject(line.removeSuffix(",").trim())
-            val imagePath = item.optString("scanImageBase64").takeIf(String::isNotBlank)?.let { encoded ->
-                val file = File(context.filesDir, "scans/${System.currentTimeMillis()}-$lineIndex.jpg")
-                file.parentFile?.mkdirs()
-                file.writeBytes(Base64.decode(encoded, Base64.DEFAULT))
-                file.absolutePath
-            }
-            dao.insert(RecipeEntity(
-                name = item.optString("name", "Recette importée"),
-                nameFrench = item.optString("nameFrench"),
-                family = item.optString("family", "autres"),
-                familiesJson = item.optString("familiesJson", "[]"),
-                ingredientOne = item.optString("ingredientOne"),
-                ingredientTwo = item.optString("ingredientTwo"),
-                ingredientsJson = item.optString("ingredientsJson", "[]"),
-                ingredientsFrenchJson = item.optString("ingredientsFrenchJson", "[]"),
-                searchAliases = item.optString("searchAliases"),
-                ocrText = item.optString("ocrText"),
-                scanImagePath = imagePath,
-                createdAt = item.optLong("createdAt", System.currentTimeMillis())
-            ))
-            imported++
-            lineIndex++
+        val knownFingerprints = dao.all().map { it.fingerprint() }.toMutableSet()
+        val file = context.contentResolver.openInputStream(uri)
+            ?: error("Impossible de lire le fichier de backup")
+        val reader = JsonReader(InputStreamReader(file, Charsets.UTF_8))
+        reader.use {
+                it.beginArray()
+                while (it.hasNext()) {
+                    it.beginObject()
+                    var name = "Recette importée"
+                    var nameFrench = ""
+                    var family = "autres"
+                    var familiesJson = "[]"
+                    var ingredientOne = ""
+                    var ingredientTwo = ""
+                    var ingredientsJson = "[]"
+                    var ingredientsFrenchJson = "[]"
+                    var searchAliases = ""
+                    var ocrText = ""
+                    var encodedImage = ""
+                    var createdAt = System.currentTimeMillis()
+                    while (it.hasNext()) {
+                        when (it.nextName()) {
+                            "name" -> name = it.nextString()
+                            "nameFrench" -> nameFrench = it.nextString()
+                            "family" -> family = it.nextString()
+                            "familiesJson" -> familiesJson = it.nextString()
+                            "ingredientOne" -> ingredientOne = it.nextString()
+                            "ingredientTwo" -> ingredientTwo = it.nextString()
+                            "ingredientsJson" -> ingredientsJson = it.nextString()
+                            "ingredientsFrenchJson" -> ingredientsFrenchJson = it.nextString()
+                            "searchAliases" -> searchAliases = it.nextString()
+                            "ocrText" -> ocrText = it.nextString()
+                            "scanImageBase64" -> encodedImage = it.nextString()
+                            "createdAt" -> createdAt = it.nextLong()
+                            else -> it.skipValue()
+                        }
+                    }
+                    it.endObject()
+                    val fingerprint = fingerprintOf(name, nameFrench, ingredientsJson, ocrText)
+                    if (fingerprint in knownFingerprints) continue
+                    val imagePath = encodedImage.takeIf(String::isNotBlank)?.let { encoded ->
+                        val imageFile = File(context.filesDir, "scans/${System.currentTimeMillis()}-$imported.jpg")
+                        imageFile.parentFile?.mkdirs()
+                        imageFile.outputStream().use { output ->
+                            Base64.decode(encoded, Base64.DEFAULT).inputStream().use { input -> input.copyTo(output) }
+                        }
+                        imageFile.absolutePath
+                    }
+                    dao.insert(RecipeEntity(
+                        name = name,
+                        nameFrench = nameFrench,
+                        family = family,
+                        familiesJson = familiesJson,
+                        ingredientOne = ingredientOne,
+                        ingredientTwo = ingredientTwo,
+                        ingredientsJson = ingredientsJson,
+                        ingredientsFrenchJson = ingredientsFrenchJson,
+                        searchAliases = searchAliases,
+                        ocrText = ocrText,
+                        scanImagePath = imagePath,
+                        createdAt = createdAt,
+                        recipeFingerprint = fingerprint
+                    ))
+                    imported++
+                    knownFingerprints += fingerprint
+                }
+                it.endArray()
         }
         if (imported == 0) error("Le fichier ne contient aucune recette compatible")
         importPreferences.edit()
@@ -99,7 +138,30 @@ class RecipeRepository(private val context: Context) {
     private fun normalize(value: String): String = Normalizer.normalize(value.lowercase(), Normalizer.Form.NFD)
         .replace("\\p{Mn}+".toRegex(), "")
 
-    private fun ByteArray.sha256(): String = MessageDigest.getInstance("SHA-256")
-        .digest(this)
-        .joinToString("") { byte -> "%02x".format(byte) }
+    private fun RecipeEntity.withFingerprint(): RecipeEntity = copy(recipeFingerprint = fingerprint())
+
+    private fun RecipeEntity.fingerprint(): String = fingerprintOf(name, nameFrench, ingredientsJson, ocrText)
+
+    private fun fingerprintOf(name: String, nameFrench: String, ingredientsJson: String, ocrText: String): String {
+        val content = listOf(name, nameFrench, ingredientsJson, ocrText)
+            .joinToString("\u001f") { normalize(it).trim() }
+        return MessageDigest.getInstance("SHA-256")
+            .digest(content.toByteArray(Charsets.UTF_8))
+            .joinToString("") { byte -> "%02x".format(byte) }
+    }
+
+    private fun Uri.sha256(): String {
+        val digest = MessageDigest.getInstance("SHA-256")
+        val input = context.contentResolver.openInputStream(this)
+            ?: error("Impossible de lire le fichier de backup")
+        input.use { stream ->
+            val buffer = ByteArray(DEFAULT_BUFFER_SIZE)
+            var count = stream.read(buffer)
+            while (count >= 0) {
+                if (count > 0) digest.update(buffer, 0, count)
+                count = stream.read(buffer)
+            }
+        }
+        return digest.digest().joinToString("") { byte -> "%02x".format(byte) }
+    }
 }

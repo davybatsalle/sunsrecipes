@@ -17,5 +17,6 @@ data class RecipeEntity(
     val searchAliases: String = "",
     val ocrText: String,
     val scanImagePath: String? = null,
-    val createdAt: Long = System.currentTimeMillis()
+    val createdAt: Long = System.currentTimeMillis(),
+    val recipeFingerprint: String = ""
 )

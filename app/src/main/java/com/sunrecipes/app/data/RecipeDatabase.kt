@@ -7,7 +7,7 @@ import androidx.room.Room
 import androidx.room.RoomDatabase
 import androidx.sqlite.db.SupportSQLiteDatabase
 
-@Database(entities = [RecipeEntity::class], version = 8, exportSchema = false)
+@Database(entities = [RecipeEntity::class], version = 9, exportSchema = false)
 abstract class RecipeDatabase : RoomDatabase() {
     abstract fun recipeDao(): RecipeDao
 
@@ -19,7 +19,7 @@ abstract class RecipeDatabase : RoomDatabase() {
                 context.applicationContext,
                 RecipeDatabase::class.java,
                 "sun-recipes.db"
-            ).addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8).build().also { instance = it }
+            ).addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8, MIGRATION_8_9).build().also { instance = it }
         }
 
         private val MIGRATION_1_2 = object : Migration(1, 2) {
@@ -100,6 +100,12 @@ abstract class RecipeDatabase : RoomDatabase() {
             override fun migrate(database: SupportSQLiteDatabase) {
                 database.execSQL("ALTER TABLE recipes ADD COLUMN familiesJson TEXT NOT NULL DEFAULT '[]'")
                 database.execSQL("UPDATE recipes SET familiesJson = '[\"' || family || '\"]'")
+            }
+        }
+
+        private val MIGRATION_8_9 = object : Migration(8, 9) {
+            override fun migrate(database: SupportSQLiteDatabase) {
+                database.execSQL("ALTER TABLE recipes ADD COLUMN recipeFingerprint TEXT NOT NULL DEFAULT ''")
             }
         }
     }

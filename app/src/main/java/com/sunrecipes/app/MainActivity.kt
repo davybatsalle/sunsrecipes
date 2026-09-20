@@ -75,6 +75,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -98,8 +99,12 @@ import com.google.mlkit.vision.documentscanner.GmsDocumentScannerOptions
 import com.google.mlkit.vision.documentscanner.GmsDocumentScanning
 import com.google.mlkit.vision.documentscanner.GmsDocumentScanningResult
 import com.sunrecipes.app.data.RecipeIngredient
+import com.sunrecipes.app.update.ReleaseInfo
+import com.sunrecipes.app.update.UpdateChecker
+import kotlinx.coroutines.launch
 import android.graphics.BitmapFactory
 import android.graphics.Bitmap
+import android.util.Log
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -125,7 +130,10 @@ fun SunRecipesApp(recipeViewModel: RecipeViewModel = viewModel()) {
     var cameraGranted by remember { mutableStateOf(ContextCompat.checkSelfPermission(context, Manifest.permission.CAMERA) == PackageManager.PERMISSION_GRANTED) }
     val permissionLauncher = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { cameraGranted = it }
     val backupLauncher = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("application/json")) { uri -> uri?.let(recipeViewModel::export) }
-    val importLauncher = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri -> uri?.let(recipeViewModel::importRecipes) }
+    val importLauncher = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { uri ->
+        Log.d("SunRecipesImport", "Fichier sélectionné: $uri")
+        uri?.let(recipeViewModel::importRecipes)
+    }
     val documentScannerLauncher = rememberLauncherForActivityResult(ActivityResultContracts.StartIntentSenderForResult()) { result ->
         if (result.resultCode == Activity.RESULT_OK) {
             GmsDocumentScanningResult.fromActivityResultIntent(result.data)?.pages?.firstOrNull()?.imageUri?.let { uri ->
@@ -150,7 +158,7 @@ fun SunRecipesApp(recipeViewModel: RecipeViewModel = viewModel()) {
 
     MaterialTheme(colorScheme = androidx.compose.material3.lightColorScheme(primary = coral, background = paper, surface = paper, onBackground = ink, onSurface = ink)) {
         if (showSettings) {
-            GeminiSettingsScreen(
+            ConfigurationScreen(
                 viewModel = recipeViewModel,
                 onBack = { showSettings = false },
                 onOpenAiStudio = {
@@ -201,7 +209,7 @@ fun SunRecipesApp(recipeViewModel: RecipeViewModel = viewModel()) {
         } else {
             RecipeHomeScreen(recipeViewModel, onScan = {
                 launchDocumentScanner()
-            }, onBackup = { backupLauncher.launch("sun-recipes-backup.json") }, onImport = { importLauncher.launch(arrayOf("application/json", "text/*")) }, onRecipeClick = { selectedRecipe = it }, onSettings = { showSettings = true })
+            }, onBackup = { backupLauncher.launch("sun-recipes-backup.json") }, onImport = { importLauncher.launch("*/*") }, onRecipeClick = { selectedRecipe = it }, onSettings = { showSettings = true })
         }
     }
 }
@@ -216,14 +224,41 @@ private fun copyScannedUri(context: android.content.Context, uri: Uri): java.io.
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun GeminiSettingsScreen(viewModel: RecipeViewModel, onBack: () -> Unit, onOpenAiStudio: () -> Unit) {
+private fun ConfigurationScreen(viewModel: RecipeViewModel, onBack: () -> Unit, onOpenAiStudio: () -> Unit) {
+    val context = LocalContext.current
     val hasKey by viewModel.hasGeminiKey.collectAsStateWithLifecycle()
     var key by remember { mutableStateOf("") }
+    var latestRelease by remember { mutableStateOf<ReleaseInfo?>(null) }
+    var updateMessage by remember { mutableStateOf<String?>(null) }
+    var checkingUpdate by remember { mutableStateOf(false) }
+    var downloadingUpdate by remember { mutableStateOf(false) }
+    val scope = rememberCoroutineScope()
+    val currentVersion = BuildConfig.VERSION_NAME
+
+    fun checkForUpdate() {
+        scope.launch {
+            checkingUpdate = true
+            updateMessage = null
+            runCatching { UpdateChecker.checkLatest() }
+                .onSuccess { release ->
+                    latestRelease = release
+                    updateMessage = if (UpdateChecker.isNewer(currentVersion, release.version)) {
+                        "Nouvelle version disponible : ${release.version}"
+                    } else {
+                        "Vous utilisez la dernière version."
+                    }
+                }
+                .onFailure { updateMessage = "Vérification impossible : ${it.message ?: "erreur réseau"}" }
+            checkingUpdate = false
+        }
+    }
+
+    LaunchedEffect(Unit) { checkForUpdate() }
     Scaffold(
         containerColor = paper,
         topBar = {
             TopAppBar(
-                title = { Text("Analyse IA Gemini") },
+                title = { Text("Configuration") },
                 navigationIcon = { IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, "Retour") } }
             )
         }
@@ -255,6 +290,32 @@ private fun GeminiSettingsScreen(viewModel: RecipeViewModel, onBack: () -> Unit,
                 Text("Une clé Gemini est nécessaire pour analyser les scans.", color = Color(0xFF746A63))
             }
             Text("La clé est chiffrée avec Android Keystore. Pour une application distribuée, utilisez plutôt un serveur intermédiaire.", style = MaterialTheme.typography.bodySmall, color = Color(0xFF746A63))
+            Text("Mises à jour", style = MaterialTheme.typography.titleMedium)
+            Text("Version installée : $currentVersion", color = Color(0xFF746A63))
+            Button(
+                onClick = ::checkForUpdate,
+                enabled = !checkingUpdate && !downloadingUpdate,
+                modifier = Modifier.fillMaxWidth()
+            ) { Text(if (checkingUpdate) "Recherche en cours…" else "Rechercher une mise à jour") }
+            updateMessage?.let { message ->
+                Text(message, color = if (latestRelease != null && UpdateChecker.isNewer(currentVersion, latestRelease!!.version)) coral else Color(0xFF746A63))
+            }
+            if (latestRelease != null && UpdateChecker.isNewer(currentVersion, latestRelease!!.version)) {
+                Button(
+                    enabled = !downloadingUpdate,
+                    onClick = {
+                        scope.launch {
+                            downloadingUpdate = true
+                            updateMessage = "Téléchargement de ${latestRelease!!.version}…"
+                            runCatching { UpdateChecker.downloadAndInstall(context, latestRelease!!) }
+                                .onSuccess { apk -> UpdateChecker.install(context, apk) }
+                                .onFailure { updateMessage = "Téléchargement impossible : ${it.message ?: "erreur"}" }
+                            downloadingUpdate = false
+                        }
+                    },
+                    modifier = Modifier.fillMaxWidth()
+                ) { Text(if (downloadingUpdate) "Téléchargement en cours…" else "Télécharger et installer") }
+            }
         }
     }
 }
