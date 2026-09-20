@@ -14,6 +14,7 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
+import android.util.Log
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import java.io.File
 import java.util.UUID
@@ -78,10 +79,17 @@ class RecipeViewModel(application: Application) : AndroidViewModel(application) 
     fun updateRecipe(recipe: RecipeEntity) = viewModelScope.launch { repository.update(recipe) }
     fun cancelPendingScan() { pendingRecipes.value = emptyList() }
     fun delete(recipe: RecipeEntity) = viewModelScope.launch { repository.delete(recipe) }
-    fun export(uri: android.net.Uri) = viewModelScope.launch { repository.exportTo(uri) }
+    fun export(uri: android.net.Uri) = viewModelScope.launch {
+        runCatching { repository.exportTo(uri) }
+            .onSuccess { scanMessage.value = "Backup créé avec succès." }
+            .onFailure { scanMessage.value = "Backup impossible : ${it.message ?: "erreur d’écriture"}" }
+    }
     fun importRecipes(uri: android.net.Uri) = viewModelScope.launch {
         runCatching { repository.importFrom(uri) }
             .onSuccess { scanMessage.value = "$it recette${if (it > 1) "s" else ""} importée${if (it > 1) "s" else ""}." }
-            .onFailure { scanMessage.value = "Import impossible : ${it.message ?: "fichier invalide"}" }
+            .onFailure {
+                Log.e("SunRecipesImport", "Import du backup échoué", it)
+                scanMessage.value = "Import impossible : ${it.message ?: "fichier invalide"}"
+            }
     }
 }
