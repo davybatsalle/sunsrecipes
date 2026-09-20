@@ -166,6 +166,7 @@ class RecipeOcrParser(context: Context) {
             normalized == "poissons" -> "poissons"
             normalized == "soupes" -> "soupes"
             normalized == "oeufs" -> "œufs"
+            normalized == "salades" || normalized == "salade" -> "salades"
             else -> "autres"
         }
     }

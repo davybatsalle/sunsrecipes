@@ -28,6 +28,7 @@ Pour un compte Google personnel, l’écran `Configurer Gemini` ouvre Google AI 
 Sans clé Gemini configurée, aucun scan n’est lancé.
 
 - Ajoutez un terme dans la liste de la famille concernée pour améliorer le classement IA.
+- Familles disponibles : viandes, légumes, desserts, poissons, soupes, œufs, salades et autres.
 - Ajoutez une entrée `{ "fr": "...", "en": "..." }` dans `ingredients` pour rendre la recherche bilingue.
 - Conservez un JSON valide et utilisez des guillemets doubles.
 

@@ -3,7 +3,7 @@ package com.sunrecipes.app.data
 import org.json.JSONArray
 
 object RecipeFamilies {
-    val allowed = listOf("viandes", "légumes", "desserts", "poissons", "soupes", "œufs", "autres")
+    val allowed = listOf("viandes", "légumes", "desserts", "poissons", "soupes", "œufs", "salades", "autres")
 
     fun encode(values: List<String>): String = JSONArray(values.filter { it in allowed }.distinct()).toString()
 
