@@ -36,6 +36,7 @@ import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.gestures.rememberTransformableState
+import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.compose.foundation.gestures.transformable
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
@@ -83,6 +84,7 @@ import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.layout.onSizeChanged
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.unit.dp
@@ -123,6 +125,7 @@ fun SunRecipesApp(recipeViewModel: RecipeViewModel = viewModel()) {
     val context = LocalContext.current
     var showScanner by remember { mutableStateOf(false) }
     var selectedRecipe by remember { mutableStateOf<RecipeEntity?>(null) }
+    var detailRecipes by remember { mutableStateOf<List<RecipeEntity>>(emptyList()) }
     var editingRecipe by remember { mutableStateOf<RecipeEntity?>(null) }
     var showCameraFallback by remember { mutableStateOf(false) }
     var showSettings by remember { mutableStateOf(false) }
@@ -184,6 +187,7 @@ fun SunRecipesApp(recipeViewModel: RecipeViewModel = viewModel()) {
                 onSave = {
                     recipeViewModel.updateRecipe(it)
                     selectedRecipe = it
+                    detailRecipes = detailRecipes.map { recipe -> if (recipe.id == it.id) it else recipe }
                     editingRecipe = null
                 }
             )
@@ -193,8 +197,13 @@ fun SunRecipesApp(recipeViewModel: RecipeViewModel = viewModel()) {
                 onBack = { selectedRecipe = null },
                 onEdit = { editingRecipe = it },
                 onCrop = { recipe, bitmap ->
-                    recipeViewModel.cropScan(recipe, bitmap) { updated -> selectedRecipe = updated }
+                    recipeViewModel.cropScan(recipe, bitmap) { updated ->
+                        selectedRecipe = updated
+                        detailRecipes = detailRecipes.map { current -> if (current.id == updated.id) updated else current }
+                    }
                 },
+                recipes = detailRecipes,
+                onNavigate = { selectedRecipe = it },
                 onDelete = {
                     recipeViewModel.delete(it)
                     selectedRecipe = null
@@ -209,7 +218,10 @@ fun SunRecipesApp(recipeViewModel: RecipeViewModel = viewModel()) {
         } else {
             RecipeHomeScreen(recipeViewModel, onScan = {
                 launchDocumentScanner()
-            }, onBackup = { backupLauncher.launch(null) }, onImport = { importLauncher.launch("*/*") }, onRecipeClick = { selectedRecipe = it }, onSettings = { showSettings = true })
+            }, onBackup = { backupLauncher.launch(null) }, onImport = { importLauncher.launch("*/*") }, onRecipeClick = { recipe, recipes ->
+                selectedRecipe = recipe
+                detailRecipes = recipes
+            }, onSettings = { showSettings = true })
         }
     }
 }
@@ -322,7 +334,7 @@ private fun ConfigurationScreen(viewModel: RecipeViewModel, onBack: () -> Unit, 
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun RecipeHomeScreen(viewModel: RecipeViewModel, onScan: () -> Unit, onBackup: () -> Unit, onImport: () -> Unit, onRecipeClick: (RecipeEntity) -> Unit, onSettings: () -> Unit) {
+private fun RecipeHomeScreen(viewModel: RecipeViewModel, onScan: () -> Unit, onBackup: () -> Unit, onImport: () -> Unit, onRecipeClick: (RecipeEntity, List<RecipeEntity>) -> Unit, onSettings: () -> Unit) {
     val recipes by viewModel.recipes.collectAsStateWithLifecycle()
     val query by viewModel.searchQuery.collectAsStateWithLifecycle()
     val scanMessage by viewModel.scanMessage.collectAsStateWithLifecycle()
@@ -362,7 +374,9 @@ private fun RecipeHomeScreen(viewModel: RecipeViewModel, onScan: () -> Unit, onB
             Text("${recipes.size} recette${if (recipes.size > 1) "s" else ""}", style = MaterialTheme.typography.labelLarge, color = Color(0xFF746A63))
             Spacer(Modifier.height(6.dp))
             if (recipes.isEmpty()) EmptyState(onScan) else LazyColumn(contentPadding = PaddingValues(bottom = 96.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                items(recipes, key = { it.id }) { RecipeCard(it, viewModel::delete, onRecipeClick) }
+                items(recipes, key = { it.id }) { recipe ->
+                    RecipeCard(recipe, viewModel::delete) { onRecipeClick(recipe, recipes) }
+                }
             }
         }
     }
@@ -521,9 +535,10 @@ private fun RecipeCard(recipe: RecipeEntity, onDelete: (RecipeEntity) -> Unit, o
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun RecipeDetailScreen(recipe: RecipeEntity, onBack: () -> Unit, onEdit: (RecipeEntity) -> Unit, onCrop: (RecipeEntity, Bitmap) -> Unit, onDelete: (RecipeEntity) -> Unit) {
+private fun RecipeDetailScreen(recipe: RecipeEntity, recipes: List<RecipeEntity>, onBack: () -> Unit, onEdit: (RecipeEntity) -> Unit, onCrop: (RecipeEntity, Bitmap) -> Unit, onNavigate: (RecipeEntity) -> Unit, onDelete: (RecipeEntity) -> Unit) {
     val context = LocalContext.current
     var showFullScan by remember { mutableStateOf(false) }
+    val recipeIndex = recipes.indexOfFirst { it.id == recipe.id }
     Scaffold(
         containerColor = paper,
         topBar = {
@@ -541,7 +556,20 @@ private fun RecipeDetailScreen(recipe: RecipeEntity, onBack: () -> Unit, onEdit:
         }
     ) { padding ->
         LazyColumn(
-            modifier = Modifier.padding(padding).fillMaxSize(),
+            modifier = Modifier.padding(padding).fillMaxSize().pointerInput(recipe.id, recipes) {
+                var totalDrag = 0f
+                detectHorizontalDragGestures(
+                    onHorizontalDrag = { _, dragAmount -> totalDrag += dragAmount },
+                    onDragEnd = {
+                        val targetIndex = when {
+                            totalDrag < -120f -> recipeIndex + 1
+                            totalDrag > 120f -> recipeIndex - 1
+                            else -> -1
+                        }
+                        recipes.getOrNull(targetIndex)?.let(onNavigate)
+                    }
+                )
+            },
             contentPadding = PaddingValues(start = 20.dp, end = 20.dp, bottom = 32.dp),
             verticalArrangement = Arrangement.spacedBy(16.dp)
         ) {
