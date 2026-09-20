@@ -5,15 +5,20 @@ import android.net.Uri
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import android.util.Base64
 import java.io.File
+import java.security.MessageDigest
 import java.text.Normalizer
 import org.json.JSONArray
 import org.json.JSONObject
 
 class RecipeRepository(private val context: Context) {
     private val dao = RecipeDatabase.get(context).recipeDao()
+    private val importPreferences = context.getSharedPreferences("recipe_imports", Context.MODE_PRIVATE)
+    private val importMutex = Mutex()
 
     fun observeRecipes(query: String): Flow<List<RecipeEntity>> =
         if (query.isBlank()) dao.observeAll() else dao.search(normalize(query.trim()))
@@ -41,12 +46,18 @@ class RecipeRepository(private val context: Context) {
         }
     }
 
-    suspend fun importFrom(uri: Uri): Int = withContext(Dispatchers.IO) {
-        val reader = context.contentResolver.openInputStream(uri)?.bufferedReader(Charsets.UTF_8)
+    suspend fun importFrom(uri: Uri): Int = importMutex.withLock {
+        withContext(Dispatchers.IO) {
+        val backupBytes = context.contentResolver.openInputStream(uri)?.use { it.readBytes() }
             ?: error("Impossible de lire le fichier de backup")
+        val backupHash = backupBytes.sha256()
+        val importedBackups = importPreferences.getStringSet("sha256", emptySet()).orEmpty()
+        if (backupHash in importedBackups) return@withContext 0
+
+        val content = backupBytes.toString(Charsets.UTF_8)
         var imported = 0
         var lineIndex = 0
-        reader.useLines { lines -> lines.forEach { rawLine ->
+        content.lineSequence().forEach { rawLine ->
             val line = rawLine.trim().removePrefix("\uFEFF")
             if (!line.startsWith("{")) return@forEach
             val item = JSONObject(line.removeSuffix(",").trim())
@@ -72,9 +83,13 @@ class RecipeRepository(private val context: Context) {
             ))
             imported++
             lineIndex++
-        } }
+        }
         if (imported == 0) error("Le fichier ne contient aucune recette compatible")
+        importPreferences.edit()
+            .putStringSet("sha256", importedBackups + backupHash)
+            .apply()
         imported
+        }
     }
 
     private suspend fun <T> Flow<T>.firstValue(): T = first()
@@ -83,4 +98,8 @@ class RecipeRepository(private val context: Context) {
 
     private fun normalize(value: String): String = Normalizer.normalize(value.lowercase(), Normalizer.Form.NFD)
         .replace("\\p{Mn}+".toRegex(), "")
+
+    private fun ByteArray.sha256(): String = MessageDigest.getInstance("SHA-256")
+        .digest(this)
+        .joinToString("") { byte -> "%02x".format(byte) }
 }

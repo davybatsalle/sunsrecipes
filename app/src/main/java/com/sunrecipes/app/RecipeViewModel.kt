@@ -1,6 +1,7 @@
 package com.sunrecipes.app
 
 import android.app.Application
+import android.graphics.Bitmap
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.sunrecipes.app.data.RecipeEntity
@@ -14,6 +15,8 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 import android.util.Log
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import java.io.File
@@ -77,6 +80,21 @@ class RecipeViewModel(application: Application) : AndroidViewModel(application) 
         scanMessage.value = "${recipes.size} recette${if (recipes.size > 1) "s" else ""} ajoutée${if (recipes.size > 1) "s" else ""}."
     }
     fun updateRecipe(recipe: RecipeEntity) = viewModelScope.launch { repository.update(recipe) }
+    fun cropScan(recipe: RecipeEntity, bitmap: Bitmap, onSaved: (RecipeEntity) -> Unit) = viewModelScope.launch {
+        runCatching {
+            withContext(Dispatchers.IO) {
+                val file = File(getApplication<Application>().filesDir, "scans/${UUID.randomUUID()}-crop.jpg")
+                file.parentFile?.mkdirs()
+                file.outputStream().use { output ->
+                    check(bitmap.compress(Bitmap.CompressFormat.JPEG, 92, output)) { "Impossible d’enregistrer le recadrage" }
+                }
+                val updated = recipe.copy(scanImagePath = file.absolutePath)
+                repository.update(updated)
+                updated
+            }
+        }.onSuccess(onSaved)
+            .onFailure { error -> Log.e("SunRecipesCrop", "Recadrage du scan échoué", error) }
+    }
     fun cancelPendingScan() { pendingRecipes.value = emptyList() }
     fun delete(recipe: RecipeEntity) = viewModelScope.launch { repository.delete(recipe) }
     fun export(uri: android.net.Uri) = viewModelScope.launch {
@@ -86,7 +104,13 @@ class RecipeViewModel(application: Application) : AndroidViewModel(application) 
     }
     fun importRecipes(uri: android.net.Uri) = viewModelScope.launch {
         runCatching { repository.importFrom(uri) }
-            .onSuccess { scanMessage.value = "$it recette${if (it > 1) "s" else ""} importée${if (it > 1) "s" else ""}." }
+            .onSuccess {
+                scanMessage.value = if (it == 0) {
+                    "Ce backup a déjà été importé."
+                } else {
+                    "$it recette${if (it > 1) "s" else ""} importée${if (it > 1) "s" else ""}."
+                }
+            }
             .onFailure {
                 Log.e("SunRecipesImport", "Import du backup échoué", it)
                 scanMessage.value = "Import impossible : ${it.message ?: "fichier invalide"}"

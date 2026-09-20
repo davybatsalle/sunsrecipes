@@ -16,6 +16,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
@@ -40,6 +41,8 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.AddAPhoto
 import androidx.compose.material.icons.filled.CloudUpload
+import androidx.compose.material.icons.filled.Check
+import androidx.compose.material.icons.filled.Crop
 import androidx.compose.material.icons.filled.FileOpen
 import androidx.compose.material.icons.filled.DeleteOutline
 import androidx.compose.material.icons.filled.Search
@@ -78,6 +81,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.unit.dp
@@ -95,6 +99,7 @@ import com.google.mlkit.vision.documentscanner.GmsDocumentScanning
 import com.google.mlkit.vision.documentscanner.GmsDocumentScanningResult
 import com.sunrecipes.app.data.RecipeIngredient
 import android.graphics.BitmapFactory
+import android.graphics.Bitmap
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -179,6 +184,9 @@ fun SunRecipesApp(recipeViewModel: RecipeViewModel = viewModel()) {
                 recipe = selectedRecipe!!,
                 onBack = { selectedRecipe = null },
                 onEdit = { editingRecipe = it },
+                onCrop = { recipe, bitmap ->
+                    recipeViewModel.cropScan(recipe, bitmap) { updated -> selectedRecipe = updated }
+                },
                 onDelete = {
                     recipeViewModel.delete(it)
                     selectedRecipe = null
@@ -443,7 +451,7 @@ private fun RecipeCard(recipe: RecipeEntity, onDelete: (RecipeEntity) -> Unit, o
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun RecipeDetailScreen(recipe: RecipeEntity, onBack: () -> Unit, onEdit: (RecipeEntity) -> Unit, onDelete: (RecipeEntity) -> Unit) {
+private fun RecipeDetailScreen(recipe: RecipeEntity, onBack: () -> Unit, onEdit: (RecipeEntity) -> Unit, onCrop: (RecipeEntity, Bitmap) -> Unit, onDelete: (RecipeEntity) -> Unit) {
     val context = LocalContext.current
     var showFullScan by remember { mutableStateOf(false) }
     Scaffold(
@@ -493,7 +501,15 @@ private fun RecipeDetailScreen(recipe: RecipeEntity, onBack: () -> Unit, onEdit:
         }
     }
     if (showFullScan) {
-        FullScanViewer(recipe.scanImagePath, recipe.nameFrench.ifBlank { recipe.name }) { showFullScan = false }
+        FullScanViewer(
+            recipe.scanImagePath,
+            recipe.nameFrench.ifBlank { recipe.name },
+            onDismiss = { showFullScan = false },
+            onCrop = { croppedBitmap ->
+                onCrop(recipe, croppedBitmap)
+                showFullScan = false
+            }
+        )
     }
 }
 
@@ -510,16 +526,24 @@ private fun shareScan(context: android.content.Context, recipe: RecipeEntity) {
 }
 
 @Composable
-private fun FullScanViewer(imagePath: String?, title: String, onDismiss: () -> Unit) {
+private fun FullScanViewer(imagePath: String?, title: String, onDismiss: () -> Unit, onCrop: (android.graphics.Bitmap) -> Unit) {
     val bitmap = remember(imagePath) { imagePath?.let(BitmapFactory::decodeFile) }
     var scale by remember { mutableStateOf(1f) }
     var offset by remember { mutableStateOf(Offset.Zero) }
+    var cropMode by remember { mutableStateOf(false) }
+    var containerWidth by remember { mutableStateOf(0) }
+    var containerHeight by remember { mutableStateOf(0) }
     val transformState = rememberTransformableState { zoomChange, panChange, _ ->
         scale = (scale * zoomChange).coerceIn(1f, 5f)
         offset += panChange
     }
     Dialog(onDismissRequest = onDismiss, properties = DialogProperties(usePlatformDefaultWidth = false)) {
-        Box(Modifier.fillMaxSize().background(Color.Black)) {
+        BoxWithConstraints(
+            Modifier.fillMaxSize().background(Color.Black).onSizeChanged { size ->
+                containerWidth = size.width
+                containerHeight = size.height
+            }
+        ) {
             bitmap?.let {
                 Image(
                     bitmap = it.asImageBitmap(),
@@ -536,9 +560,46 @@ private fun FullScanViewer(imagePath: String?, title: String, onDismiss: () -> U
             IconButton(onClick = onDismiss, modifier = Modifier.align(Alignment.TopStart).padding(12.dp)) {
                 Icon(Icons.AutoMirrored.Filled.ArrowBack, "Fermer", tint = Color.White)
             }
+            IconButton(
+                onClick = {
+                    if (!cropMode) {
+                        cropMode = true
+                    } else {
+                        bitmap?.let { cropped ->
+                            cropVisibleBitmap(cropped, scale, offset, containerWidth, containerHeight)?.let(onCrop)
+                        }
+                    }
+                },
+                enabled = bitmap != null && containerWidth > 0 && containerHeight > 0,
+                modifier = Modifier.align(Alignment.TopEnd).padding(12.dp)
+            ) {
+                Icon(
+                    if (cropMode) Icons.Default.Check else Icons.Default.Crop,
+                    if (cropMode) "Valider le recadrage" else "Recadrer le scan",
+                    tint = Color.White
+                )
+            }
         }
     }
 }
+
+private fun cropVisibleBitmap(bitmap: android.graphics.Bitmap, scale: Float, offset: Offset, containerWidth: Int, containerHeight: Int): android.graphics.Bitmap? {
+    if (containerWidth <= 0 || containerHeight <= 0) return null
+    val baseScale = minOf(containerWidth.toFloat() / bitmap.width, containerHeight.toFloat() / bitmap.height)
+    val renderedScale = baseScale * scale
+    val imageLeft = (containerWidth - bitmap.width * renderedScale) / 2f + offset.x
+    val imageTop = (containerHeight - bitmap.height * renderedScale) / 2f + offset.y
+    val left = ((-imageLeft) / renderedScale).coerceIn(0f, bitmap.width.toFloat()).toInt()
+    val top = ((-imageTop) / renderedScale).coerceIn(0f, bitmap.height.toFloat()).toInt()
+    val right = ((containerWidth - imageLeft) / renderedScale).coerceIn(0f, bitmap.width.toFloat()).toInt()
+    val bottom = ((containerHeight - imageTop) / renderedScale).coerceIn(0f, bitmap.height.toFloat()).toInt()
+    val safeLeft = left.coerceAtMost(bitmap.width - 1)
+    val safeTop = top.coerceAtMost(bitmap.height - 1)
+    val safeRight = right.coerceAtLeast(safeLeft + 1).coerceAtMost(bitmap.width)
+    val safeBottom = bottom.coerceAtLeast(safeTop + 1).coerceAtMost(bitmap.height)
+    return android.graphics.Bitmap.createBitmap(bitmap, safeLeft, safeTop, safeRight - safeLeft, safeBottom - safeTop)
+}
+
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
