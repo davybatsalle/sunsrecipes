@@ -3,7 +3,7 @@ package com.sunrecipes.app.data
 import org.json.JSONArray
 
 object RecipeFamilies {
-    val allowed = listOf("viandes", "légumes", "desserts", "poissons", "soupes", "autres")
+    val allowed = listOf("viandes", "légumes", "desserts", "poissons", "soupes", "œufs", "autres")
 
     fun encode(values: List<String>): String = JSONArray(values.filter { it in allowed }.distinct()).toString()
 
@@ -14,5 +14,9 @@ object RecipeFamilies {
     }.getOrDefault(listOf(canonical(fallback)))
 
     fun canonical(value: String): String = allowed.firstOrNull { it.equals(value, ignoreCase = true) }
-        ?: if (value.equals("legumes", ignoreCase = true)) "légumes" else "autres"
+        ?: when {
+            value.equals("legumes", ignoreCase = true) -> "légumes"
+            value.equals("oeufs", ignoreCase = true) || value.equals("eggs", ignoreCase = true) -> "œufs"
+            else -> "autres"
+        }
 }

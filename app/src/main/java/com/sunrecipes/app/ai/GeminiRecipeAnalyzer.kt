@@ -96,7 +96,7 @@ class GeminiRecipeAnalyzer(
 Analyze this recipe page image. Return only a JSON array with objects containing name, nameFrench, family, families, ingredients, and ingredientsFrench.
 nameFrench must be the French translation of the title. ingredientsFrench must contain only the French names of at most two main ingredients, with no quantities.
 Preserve the original values in name and ingredients internally, but the user-facing fields will use only nameFrench and ingredientsFrench.
-Infer one or more families from the title and the main ingredients. families must be an array containing only these exact lowercase values: viandes, légumes, desserts, poissons, soupes, autres. Set family to the first selected value. Do not use unrelated decorative text.
+Infer one or more families from the title and the main ingredients. families must be an array containing only these exact lowercase values: viandes, légumes, desserts, poissons, soupes, œufs, autres. Set family to the first selected value. Do not use unrelated decorative text.
 Return at most two main ingredient names, without quantities or preparation steps.
 Ignore decorative text, slogans, captions and unrelated page content.
 Preserve the recipe language. Do not translate.
