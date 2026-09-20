@@ -21,7 +21,6 @@ import org.json.JSONObject
 
 class RecipeRepository(private val context: Context) {
     private val dao = RecipeDatabase.get(context).recipeDao()
-    private val importPreferences = context.getSharedPreferences("recipe_imports", Context.MODE_PRIVATE)
     private val importMutex = Mutex()
 
     fun observeRecipes(query: String): Flow<List<RecipeEntity>> {
@@ -106,11 +105,8 @@ class RecipeRepository(private val context: Context) {
 
     suspend fun importFrom(uri: Uri): Int = importMutex.withLock {
         withContext(Dispatchers.IO) {
-        val backupHash = uri.sha256()
-        val importedBackups = importPreferences.getStringSet("sha256", emptySet()).orEmpty()
-        if (backupHash in importedBackups) return@withContext 0
-
         var imported = 0
+        var parsedRecipes = 0
         val knownFingerprints = dao.all().map { it.fingerprint() }.toMutableSet()
         val file = context.contentResolver.openInputStream(uri)
             ?: error("Impossible de lire le fichier de backup")
@@ -149,6 +145,7 @@ class RecipeRepository(private val context: Context) {
                         }
                     }
                     it.endObject()
+                    parsedRecipes++
                     val fingerprint = fingerprintOf(name, nameFrench, ingredientsJson, ocrText)
                     if (fingerprint in knownFingerprints) continue
                     val imagePath = encodedImage.takeIf(String::isNotBlank)?.let { encoded ->
@@ -179,10 +176,7 @@ class RecipeRepository(private val context: Context) {
                 }
                 it.endArray()
         }
-        if (imported == 0) error("Le fichier ne contient aucune recette compatible")
-        importPreferences.edit()
-            .putStringSet("sha256", importedBackups + backupHash)
-            .apply()
+            if (parsedRecipes == 0) error("Le fichier ne contient aucune recette compatible")
         imported
         }
     }
@@ -204,21 +198,6 @@ class RecipeRepository(private val context: Context) {
         return MessageDigest.getInstance("SHA-256")
             .digest(content.toByteArray(Charsets.UTF_8))
             .joinToString("") { byte -> "%02x".format(byte) }
-    }
-
-    private fun Uri.sha256(): String {
-        val digest = MessageDigest.getInstance("SHA-256")
-        val input = context.contentResolver.openInputStream(this)
-            ?: error("Impossible de lire le fichier de backup")
-        input.use { stream ->
-            val buffer = ByteArray(DEFAULT_BUFFER_SIZE)
-            var count = stream.read(buffer)
-            while (count >= 0) {
-                if (count > 0) digest.update(buffer, 0, count)
-                count = stream.read(buffer)
-            }
-        }
-        return digest.digest().joinToString("") { byte -> "%02x".format(byte) }
     }
 
     private companion object {

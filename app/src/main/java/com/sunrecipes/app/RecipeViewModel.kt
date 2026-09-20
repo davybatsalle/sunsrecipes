@@ -106,7 +106,7 @@ class RecipeViewModel(application: Application) : AndroidViewModel(application) 
         runCatching { repository.importFrom(uri) }
             .onSuccess {
                 scanMessage.value = if (it == 0) {
-                    "Ce backup a déjà été importé."
+                    "Aucune nouvelle recette à importer."
                 } else {
                     "$it recette${if (it > 1) "s" else ""} importée${if (it > 1) "s" else ""}."
                 }

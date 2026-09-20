@@ -53,6 +53,7 @@ import androidx.compose.material.icons.filled.Share
 import androidx.compose.material.icons.filled.DeleteOutline
 import androidx.compose.material.icons.automirrored.filled.MenuBook
 import androidx.compose.material3.AssistChip
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
@@ -129,6 +130,9 @@ fun SunRecipesApp(recipeViewModel: RecipeViewModel = viewModel()) {
     var editingRecipe by remember { mutableStateOf<RecipeEntity?>(null) }
     var showCameraFallback by remember { mutableStateOf(false) }
     var showSettings by remember { mutableStateOf(false) }
+    var startupRelease by remember { mutableStateOf<ReleaseInfo?>(null) }
+    var downloadingStartupUpdate by remember { mutableStateOf(false) }
+    val startupScope = rememberCoroutineScope()
     val pendingRecipes by recipeViewModel.pendingRecipes.collectAsStateWithLifecycle()
     var cameraGranted by remember { mutableStateOf(ContextCompat.checkSelfPermission(context, Manifest.permission.CAMERA) == PackageManager.PERMISSION_GRANTED) }
     val permissionLauncher = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { cameraGranted = it }
@@ -157,6 +161,15 @@ fun SunRecipesApp(recipeViewModel: RecipeViewModel = viewModel()) {
                 documentScannerLauncher.launch(IntentSenderRequest.Builder(sender).build())
             }
             .addOnFailureListener { showCameraFallback = true }
+    }
+
+    LaunchedEffect(Unit) {
+        runCatching { UpdateChecker.checkLatest() }
+            .onSuccess { release ->
+                if (UpdateChecker.isNewer(BuildConfig.VERSION_NAME, release.version)) {
+                    startupRelease = release
+                }
+            }
     }
 
     MaterialTheme(colorScheme = androidx.compose.material3.lightColorScheme(primary = coral, background = paper, surface = paper, onBackground = ink, onSurface = ink)) {
@@ -222,6 +235,37 @@ fun SunRecipesApp(recipeViewModel: RecipeViewModel = viewModel()) {
                 selectedRecipe = recipe
                 detailRecipes = recipes
             }, onSettings = { showSettings = true })
+        }
+        startupRelease?.let { release ->
+            AlertDialog(
+                onDismissRequest = { if (!downloadingStartupUpdate) startupRelease = null },
+                title = { Text("Mise à jour disponible") },
+                text = {
+                    Text("La version ${release.version} est disponible. Vous utilisez actuellement la version ${BuildConfig.VERSION_NAME}.")
+                },
+                confirmButton = {
+                    TextButton(
+                        enabled = !downloadingStartupUpdate,
+                        onClick = {
+                            startupScope.launch {
+                                downloadingStartupUpdate = true
+                                runCatching { UpdateChecker.downloadAndInstall(context, release) }
+                                    .onSuccess { apk ->
+                                        startupRelease = null
+                                        UpdateChecker.install(context, apk)
+                                    }
+                                    .onFailure { downloadingStartupUpdate = false }
+                            }
+                        }
+                    ) { Text(if (downloadingStartupUpdate) "Téléchargement…" else "Télécharger") }
+                },
+                dismissButton = {
+                    TextButton(
+                        enabled = !downloadingStartupUpdate,
+                        onClick = { startupRelease = null }
+                    ) { Text("Plus tard") }
+                }
+            )
         }
     }
 }
