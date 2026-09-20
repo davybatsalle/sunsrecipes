@@ -43,6 +43,7 @@ import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.AddAPhoto
 import androidx.compose.material.icons.filled.CloudUpload
 import androidx.compose.material.icons.filled.Check
+import androidx.compose.material.icons.filled.Clear
 import androidx.compose.material.icons.filled.Crop
 import androidx.compose.material.icons.filled.FileOpen
 import androidx.compose.material.icons.filled.DeleteOutline
@@ -409,7 +410,22 @@ private fun RecipeHomeScreen(viewModel: RecipeViewModel, onScan: () -> Unit, onB
         Column(Modifier.padding(padding).padding(horizontal = 20.dp).fillMaxSize()) {
             Text("Votre carnet de cuisine", style = MaterialTheme.typography.bodyLarge, color = Color(0xFF746A63))
             Spacer(Modifier.height(18.dp))
-            OutlinedTextField(value = query, onValueChange = viewModel::updateQuery, modifier = Modifier.fillMaxWidth(), singleLine = true, leadingIcon = { Icon(Icons.Default.Search, null) }, placeholder = { Text("Nom, ingrédient ou famille") }, shape = RoundedCornerShape(14.dp))
+            OutlinedTextField(
+                value = query,
+                onValueChange = viewModel::updateQuery,
+                modifier = Modifier.fillMaxWidth(),
+                singleLine = true,
+                leadingIcon = { Icon(Icons.Default.Search, null) },
+                trailingIcon = {
+                    if (query.isNotBlank()) {
+                        IconButton(onClick = { viewModel.updateQuery("") }) {
+                            Icon(Icons.Default.Clear, "Effacer le filtre")
+                        }
+                    }
+                },
+                placeholder = { Text("Nom, ingrédient ou famille") },
+                shape = RoundedCornerShape(14.dp)
+            )
             Spacer(Modifier.height(18.dp))
             FamilyRow(recipes) { family ->
                 viewModel.updateQuery(if (query.equals(family, ignoreCase = true)) "" else family)
@@ -434,6 +450,7 @@ private fun RecipeReviewScreen(
     onConfirm: (List<RecipeEntity>) -> Unit
 ) {
     var drafts by remember(recipes) { mutableStateOf(recipes) }
+    var ingredientTexts by remember(recipes) { mutableStateOf(recipes.map(::frenchIngredientText)) }
     Scaffold(
         containerColor = paper,
         topBar = {
@@ -470,8 +487,8 @@ private fun RecipeReviewScreen(
                                 drafts = drafts.updated(index) { withFamilies(families) }
                             }
                             OutlinedTextField(
-                                value = frenchIngredientText(recipe),
-                                onValueChange = { value -> drafts = drafts.updated(index) { withFrenchIngredients(value) } },
+                                value = ingredientTexts[index],
+                                onValueChange = { value -> ingredientTexts = ingredientTexts.mapIndexed { currentIndex, text -> if (currentIndex == index) value else text } },
                                 modifier = Modifier.fillMaxWidth(),
                                 label = { Text("Ingrédients principaux") },
                                 minLines = 4
@@ -482,7 +499,7 @@ private fun RecipeReviewScreen(
                 }
             }
             Button(
-                onClick = { onConfirm(drafts) },
+                onClick = { onConfirm(drafts.mapIndexed { index, recipe -> recipe.withFrenchIngredients(ingredientTexts[index]) }) },
                 modifier = Modifier.fillMaxWidth().padding(20.dp)
             ) {
                 Text("Ajouter au carnet")
@@ -755,13 +772,14 @@ private fun cropVisibleBitmap(bitmap: android.graphics.Bitmap, scale: Float, off
 @Composable
 private fun RecipeEditScreen(recipe: RecipeEntity, onCancel: () -> Unit, onSave: (RecipeEntity) -> Unit) {
     var draft by remember(recipe) { mutableStateOf(recipe) }
+    var ingredientText by remember(recipe) { mutableStateOf(frenchIngredientText(recipe)) }
     Scaffold(
         containerColor = paper,
         topBar = {
             TopAppBar(
                 title = { Text("Modifier la recette") },
                 navigationIcon = { IconButton(onClick = onCancel) { Icon(Icons.AutoMirrored.Filled.ArrowBack, "Annuler") } },
-                actions = { TextButton(onClick = { onSave(draft) }) { Text("Enregistrer") } }
+                actions = { TextButton(onClick = { onSave(draft.withFrenchIngredients(ingredientText)) }) { Text("Enregistrer") } }
             )
         }
     ) { padding ->
@@ -775,8 +793,8 @@ private fun RecipeEditScreen(recipe: RecipeEntity, onCancel: () -> Unit, onSave:
             )
             FamilySelector(draft.familiesJson, draft.family) { draft = draft.withFamilies(it) }
             OutlinedTextField(
-                value = frenchIngredientText(draft),
-                onValueChange = { draft = draft.withFrenchIngredients(it) },
+                value = ingredientText,
+                onValueChange = { ingredientText = it },
                 modifier = Modifier.fillMaxWidth(),
                 label = { Text("Ingrédients principaux") },
                 minLines = 4
