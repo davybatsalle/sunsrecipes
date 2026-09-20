@@ -74,8 +74,6 @@ class GeminiRecipeAnalyzer(
                     nameFrench = item.optString("nameFrench"),
                     family = item.optString("family"),
                     families = item.optJSONArray("families")?.let { values -> List(values.length()) { values.getString(it) } } ?: listOf(item.optString("family")),
-                    ingredientOne = main.getOrNull(0).orEmpty(),
-                    ingredientTwo = main.getOrNull(1).orEmpty(),
                     ingredients = main.map { com.sunrecipes.app.data.RecipeIngredient(it) },
                     frenchIngredients = item.optJSONArray("ingredientsFrench")?.let { values ->
                         List(values.length()) { com.sunrecipes.app.data.RecipeIngredient(values.getString(it)) }

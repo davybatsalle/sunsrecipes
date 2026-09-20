@@ -7,7 +7,7 @@ import androidx.room.Room
 import androidx.room.RoomDatabase
 import androidx.sqlite.db.SupportSQLiteDatabase
 
-@Database(entities = [RecipeEntity::class], version = 9, exportSchema = false)
+@Database(entities = [RecipeEntity::class], version = 10, exportSchema = false)
 abstract class RecipeDatabase : RoomDatabase() {
     abstract fun recipeDao(): RecipeDao
 
@@ -19,7 +19,7 @@ abstract class RecipeDatabase : RoomDatabase() {
                 context.applicationContext,
                 RecipeDatabase::class.java,
                 "sun-recipes.db"
-            ).addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8, MIGRATION_8_9).build().also { instance = it }
+            ).addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8, MIGRATION_8_9, MIGRATION_9_10).build().also { instance = it }
         }
 
         private val MIGRATION_1_2 = object : Migration(1, 2) {
@@ -106,6 +106,25 @@ abstract class RecipeDatabase : RoomDatabase() {
         private val MIGRATION_8_9 = object : Migration(8, 9) {
             override fun migrate(database: SupportSQLiteDatabase) {
                 database.execSQL("ALTER TABLE recipes ADD COLUMN recipeFingerprint TEXT NOT NULL DEFAULT ''")
+            }
+        }
+
+        private val MIGRATION_9_10 = object : Migration(9, 10) {
+            override fun migrate(database: SupportSQLiteDatabase) {
+                database.execSQL("""
+                    UPDATE recipes
+                    SET ingredientsJson = CASE
+                        WHEN ingredientsJson = '[]' AND ingredientOne != '' AND ingredientTwo != '' THEN
+                            '["' || REPLACE(REPLACE(ingredientOne, '\\', '\\\\'), '"', '\\"') || '","' || REPLACE(REPLACE(ingredientTwo, '\\', '\\\\'), '"', '\\"') || '"]'
+                        WHEN ingredientsJson = '[]' AND ingredientOne != '' THEN
+                            '["' || REPLACE(REPLACE(ingredientOne, '\\', '\\\\'), '"', '\\"') || '"]'
+                        ELSE ingredientsJson
+                    END
+                """.trimIndent())
+                database.execSQL("CREATE TABLE recipes_new (id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, name TEXT NOT NULL, nameFrench TEXT NOT NULL, family TEXT NOT NULL, familiesJson TEXT NOT NULL, ingredientsJson TEXT NOT NULL, ingredientsFrenchJson TEXT NOT NULL, searchAliases TEXT NOT NULL, ocrText TEXT NOT NULL, scanImagePath TEXT, createdAt INTEGER NOT NULL, recipeFingerprint TEXT NOT NULL)")
+                database.execSQL("INSERT INTO recipes_new (id, name, nameFrench, family, familiesJson, ingredientsJson, ingredientsFrenchJson, searchAliases, ocrText, scanImagePath, createdAt, recipeFingerprint) SELECT id, name, nameFrench, family, familiesJson, ingredientsJson, ingredientsFrenchJson, searchAliases, ocrText, scanImagePath, createdAt, recipeFingerprint FROM recipes")
+                database.execSQL("DROP TABLE recipes")
+                database.execSQL("ALTER TABLE recipes_new RENAME TO recipes")
             }
         }
     }

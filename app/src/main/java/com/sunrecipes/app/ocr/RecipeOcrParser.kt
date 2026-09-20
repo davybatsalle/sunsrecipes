@@ -29,12 +29,7 @@ class RecipeOcrParser(context: Context) {
         nameFrench: String = name,
         family: String,
         families: List<String> = listOf(family),
-        ingredientOne: String,
-        ingredientTwo: String,
-        ingredients: List<RecipeIngredient> = listOfNotNull(
-            ingredientOne.takeIf(String::isNotBlank)?.let(::RecipeIngredient),
-            ingredientTwo.takeIf(String::isNotBlank)?.let(::RecipeIngredient)
-        ),
+        ingredients: List<RecipeIngredient> = emptyList(),
         frenchIngredients: List<RecipeIngredient> = ingredients.map { RecipeIngredient(translateToFrench(it.name)) },
         ocrText: String,
         imagePath: String?
@@ -53,8 +48,6 @@ class RecipeOcrParser(context: Context) {
         return parseStructured(
             name = result.name,
             family = result.family,
-            ingredientOne = result.ingredientOne,
-            ingredientTwo = result.ingredientTwo,
             ingredients = ingredients,
             ocrText = ocrText,
             imagePath = imagePath
@@ -74,22 +67,17 @@ class RecipeOcrParser(context: Context) {
     }
 
     private fun createRecipe(name: String, family: String, ingredients: List<RecipeIngredient>, imagePath: String?, nameFrench: String = name, frenchIngredients: List<RecipeIngredient> = ingredients.map { RecipeIngredient(translateToFrench(it.name)) }, families: List<String> = listOf(family)): RecipeEntity {
-        val mainIngredients = ingredients.take(2)
-        val first = mainIngredients.getOrNull(0)?.name ?: "Ingrédient principal"
-        val second = mainIngredients.getOrNull(1)?.name.orEmpty()
-        val cleanText = RecipeContent.cleanText(name, mainIngredients)
+        val cleanText = RecipeContent.cleanText(name, ingredients)
         return RecipeEntity(
             name = name,
             nameFrench = nameFrench.ifBlank { name },
-            family = canonicalFamily(familyFor((listOf(name, nameFrench) + mainIngredients.map { it.name }).joinToString(" ")).let { detected ->
+            family = canonicalFamily(familyFor((listOf(name, nameFrench) + ingredients.map { it.name }).joinToString(" ")).let { detected ->
                 if (detected != "Autres") detected else family
             }),
             familiesJson = RecipeFamilies.encode(families.map(::canonicalFamily)),
-            ingredientOne = first,
-            ingredientTwo = second,
-            ingredientsJson = RecipeContent.encodeIngredients(mainIngredients),
-            ingredientsFrenchJson = RecipeContent.encodeIngredients(frenchIngredients.take(2)),
-            searchAliases = aliasesFor(cleanText, name, mainIngredients),
+            ingredientsJson = RecipeContent.encodeIngredients(ingredients),
+            ingredientsFrenchJson = RecipeContent.encodeIngredients(frenchIngredients),
+            searchAliases = aliasesFor(cleanText, name, ingredients),
             ocrText = cleanText,
             scanImagePath = imagePath
         )

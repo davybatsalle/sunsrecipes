@@ -15,7 +15,7 @@ interface RecipeDao {
     @Query("SELECT * FROM recipes")
     suspend fun all(): List<RecipeEntity>
 
-    @Query("SELECT * FROM recipes WHERE name LIKE '%' || :term || '%' OR ingredientOne LIKE '%' || :term || '%' OR ingredientTwo LIKE '%' || :term || '%' OR family LIKE '%' || :term || '%' OR familiesJson LIKE '%' || :term || '%' OR searchAliases LIKE '%' || :term || '%' ORDER BY name COLLATE NOCASE ASC")
+    @Query("SELECT * FROM recipes WHERE name LIKE '%' || :term || '%' OR family LIKE '%' || :term || '%' OR familiesJson LIKE '%' || :term || '%' OR ingredientsJson LIKE '%' || :term || '%' OR ingredientsFrenchJson LIKE '%' || :term || '%' OR searchAliases LIKE '%' || :term || '%' ORDER BY name COLLATE NOCASE ASC")
     fun search(term: String): Flow<List<RecipeEntity>>
 
     @Insert

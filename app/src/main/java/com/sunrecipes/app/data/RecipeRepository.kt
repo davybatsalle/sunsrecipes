@@ -34,8 +34,6 @@ class RecipeRepository(private val context: Context) {
                         listOf(
                             recipe.name,
                             recipe.nameFrench,
-                            recipe.ingredientOne,
-                            recipe.ingredientTwo,
                             recipe.family,
                             recipe.familiesJson,
                             recipe.searchAliases,
@@ -68,7 +66,7 @@ class RecipeRepository(private val context: Context) {
                     File(path).takeIf(File::isFile)?.readBytes()?.let { Base64.encodeToString(it, Base64.NO_WRAP) }
                 } ?: ""
                 if (index > 0) writer.write(",\n")
-                writer.write("  {\"name\":\"${recipe.name.jsonEscaped()}\",\"nameFrench\":\"${recipe.nameFrench.jsonEscaped()}\",\"family\":\"${recipe.family.jsonEscaped()}\",\"familiesJson\":\"${recipe.familiesJson.jsonEscaped()}\",\"ingredientOne\":\"${recipe.ingredientOne.jsonEscaped()}\",\"ingredientTwo\":\"${recipe.ingredientTwo.jsonEscaped()}\",\"ingredientsJson\":\"${recipe.ingredientsJson.jsonEscaped()}\",\"ingredientsFrenchJson\":\"${recipe.ingredientsFrenchJson.jsonEscaped()}\",\"searchAliases\":\"${recipe.searchAliases.jsonEscaped()}\",\"ocrText\":\"${recipe.ocrText.jsonEscaped()}\",\"scanImageBase64\":\"$image\",\"createdAt\":${recipe.createdAt}}")
+                writer.write("  {\"name\":\"${recipe.name.jsonEscaped()}\",\"nameFrench\":\"${recipe.nameFrench.jsonEscaped()}\",\"family\":\"${recipe.family.jsonEscaped()}\",\"familiesJson\":\"${recipe.familiesJson.jsonEscaped()}\",\"ingredientsJson\":\"${recipe.ingredientsJson.jsonEscaped()}\",\"ingredientsFrenchJson\":\"${recipe.ingredientsFrenchJson.jsonEscaped()}\",\"searchAliases\":\"${recipe.searchAliases.jsonEscaped()}\",\"ocrText\":\"${recipe.ocrText.jsonEscaped()}\",\"scanImageBase64\":\"$image\",\"createdAt\":${recipe.createdAt}}")
             }
             writer.write("\n]")
         }
@@ -119,8 +117,6 @@ class RecipeRepository(private val context: Context) {
                     var nameFrench = ""
                     var family = "autres"
                     var familiesJson = "[]"
-                    var ingredientOne = ""
-                    var ingredientTwo = ""
                     var ingredientsJson = "[]"
                     var ingredientsFrenchJson = "[]"
                     var searchAliases = ""
@@ -133,8 +129,17 @@ class RecipeRepository(private val context: Context) {
                             "nameFrench" -> nameFrench = it.nextString()
                             "family" -> family = it.nextString()
                             "familiesJson" -> familiesJson = it.nextString()
-                            "ingredientOne" -> ingredientOne = it.nextString()
-                            "ingredientTwo" -> ingredientTwo = it.nextString()
+                            "ingredientOne" -> {
+                                val legacy = it.nextString()
+                                if (ingredientsJson == "[]" && legacy.isNotBlank()) ingredientsJson = RecipeContent.encodeIngredients(listOf(RecipeIngredient(legacy)))
+                            }
+                            "ingredientTwo" -> {
+                                val legacy = it.nextString()
+                                if (legacy.isNotBlank()) {
+                                    val existing = RecipeContent.decodeIngredients(ingredientsJson)
+                                    ingredientsJson = RecipeContent.encodeIngredients((existing + RecipeIngredient(legacy)).distinctBy { normalize(it.name) })
+                                }
+                            }
                             "ingredientsJson" -> ingredientsJson = it.nextString()
                             "ingredientsFrenchJson" -> ingredientsFrenchJson = it.nextString()
                             "searchAliases" -> searchAliases = it.nextString()
@@ -161,8 +166,6 @@ class RecipeRepository(private val context: Context) {
                         nameFrench = nameFrench,
                         family = family,
                         familiesJson = familiesJson,
-                        ingredientOne = ingredientOne,
-                        ingredientTwo = ingredientTwo,
                         ingredientsJson = ingredientsJson,
                         ingredientsFrenchJson = ingredientsFrenchJson,
                         searchAliases = searchAliases,

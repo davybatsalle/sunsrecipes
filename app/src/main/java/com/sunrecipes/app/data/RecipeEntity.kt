@@ -10,8 +10,6 @@ data class RecipeEntity(
     val nameFrench: String = "",
     val family: String,
     val familiesJson: String = "[]",
-    val ingredientOne: String,
-    val ingredientTwo: String = "",
     val ingredientsJson: String = "[]",
     val ingredientsFrenchJson: String = "[]",
     val searchAliases: String = "",
