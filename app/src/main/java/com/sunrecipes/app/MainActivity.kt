@@ -129,7 +129,7 @@ fun SunRecipesApp(recipeViewModel: RecipeViewModel = viewModel()) {
     val pendingRecipes by recipeViewModel.pendingRecipes.collectAsStateWithLifecycle()
     var cameraGranted by remember { mutableStateOf(ContextCompat.checkSelfPermission(context, Manifest.permission.CAMERA) == PackageManager.PERMISSION_GRANTED) }
     val permissionLauncher = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { cameraGranted = it }
-    val backupLauncher = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("application/json")) { uri -> uri?.let(recipeViewModel::export) }
+    val backupLauncher = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocumentTree()) { uri -> uri?.let(recipeViewModel::export) }
     val importLauncher = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { uri ->
         Log.d("SunRecipesImport", "Fichier sélectionné: $uri")
         uri?.let(recipeViewModel::importRecipes)
@@ -209,7 +209,7 @@ fun SunRecipesApp(recipeViewModel: RecipeViewModel = viewModel()) {
         } else {
             RecipeHomeScreen(recipeViewModel, onScan = {
                 launchDocumentScanner()
-            }, onBackup = { backupLauncher.launch("sun-recipes-backup.json") }, onImport = { importLauncher.launch("*/*") }, onRecipeClick = { selectedRecipe = it }, onSettings = { showSettings = true })
+            }, onBackup = { backupLauncher.launch(null) }, onImport = { importLauncher.launch("*/*") }, onRecipeClick = { selectedRecipe = it }, onSettings = { showSettings = true })
         }
     }
 }

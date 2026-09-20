@@ -99,7 +99,7 @@ class RecipeViewModel(application: Application) : AndroidViewModel(application) 
     fun delete(recipe: RecipeEntity) = viewModelScope.launch { repository.delete(recipe) }
     fun export(uri: android.net.Uri) = viewModelScope.launch {
         runCatching { repository.exportTo(uri) }
-            .onSuccess { scanMessage.value = "Backup créé avec succès." }
+            .onSuccess { scanMessage.value = "Backup remplacé avec succès." }
             .onFailure { scanMessage.value = "Backup impossible : ${it.message ?: "erreur d’écriture"}" }
     }
     fun importRecipes(uri: android.net.Uri) = viewModelScope.launch {

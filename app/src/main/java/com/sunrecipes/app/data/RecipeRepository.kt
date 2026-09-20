@@ -2,6 +2,7 @@ package com.sunrecipes.app.data
 
 import android.content.Context
 import android.net.Uri
+import android.provider.DocumentsContract
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.Dispatchers
@@ -32,8 +33,9 @@ class RecipeRepository(private val context: Context) {
     suspend fun delete(recipe: RecipeEntity) = dao.delete(recipe)
 
     suspend fun exportTo(uri: Uri) = withContext(Dispatchers.IO) {
+        val documentUri = prepareBackupDocument(uri)
         val recipes = dao.observeAll().firstValue()
-        val output = context.contentResolver.openOutputStream(uri)
+        val output = context.contentResolver.openOutputStream(documentUri)
             ?: error("Impossible d’ouvrir le fichier de destination")
         output.bufferedWriter().use { writer ->
             writer.write("[\n")
@@ -46,6 +48,35 @@ class RecipeRepository(private val context: Context) {
             }
             writer.write("\n]")
         }
+    }
+
+    private fun prepareBackupDocument(treeUri: Uri): Uri {
+        val resolver = context.contentResolver
+        val treeDocumentId = DocumentsContract.getTreeDocumentId(treeUri)
+        val childrenUri = DocumentsContract.buildChildDocumentsUriUsingTree(treeUri, treeDocumentId)
+        resolver.query(
+            childrenUri,
+            arrayOf(DocumentsContract.Document.COLUMN_DOCUMENT_ID, DocumentsContract.Document.COLUMN_DISPLAY_NAME),
+            null,
+            null,
+            null
+        )?.use { cursor ->
+            val idIndex = cursor.getColumnIndexOrThrow(DocumentsContract.Document.COLUMN_DOCUMENT_ID)
+            val nameIndex = cursor.getColumnIndexOrThrow(DocumentsContract.Document.COLUMN_DISPLAY_NAME)
+            while (cursor.moveToNext()) {
+                if (cursor.getString(nameIndex) == BACKUP_FILE_NAME) {
+                    val existingUri = DocumentsContract.buildDocumentUriUsingTree(treeUri, cursor.getString(idIndex))
+                    DocumentsContract.deleteDocument(resolver, existingUri)
+                    break
+                }
+            }
+        }
+        return DocumentsContract.createDocument(
+            resolver,
+            DocumentsContract.buildDocumentUriUsingTree(treeUri, treeDocumentId),
+            "application/json",
+            BACKUP_FILE_NAME
+        ) ?: error("Impossible de créer le fichier de backup")
     }
 
     suspend fun importFrom(uri: Uri): Int = importMutex.withLock {
@@ -163,5 +194,9 @@ class RecipeRepository(private val context: Context) {
             }
         }
         return digest.digest().joinToString("") { byte -> "%02x".format(byte) }
+    }
+
+    private companion object {
+        const val BACKUP_FILE_NAME = "sun-recipes-backup.json"
     }
 }
