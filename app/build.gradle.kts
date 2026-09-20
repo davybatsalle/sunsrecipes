@@ -5,9 +5,46 @@ plugins {
     id("com.google.devtools.ksp")
 }
 
+val localDotEnv: Map<String, String> = rootProject.file(".env")
+    .takeIf { it.isFile }
+    ?.readLines()
+    ?.mapNotNull { line ->
+        val value = line.trim()
+        if (value.isEmpty() || value.startsWith("#") || !value.contains('=')) {
+            null
+        } else {
+            val key = value.substringBefore('=').trim()
+            val parsedValue = value.substringAfter('=').trim().removeSurrounding("\"").removeSurrounding("'")
+            key to parsedValue
+        }
+    }
+    ?.toMap()
+    ?: emptyMap()
+
+fun signingValue(name: String): String? = providers.environmentVariable(name).orNull ?: localDotEnv[name]
+
 android {
     namespace = "com.sunrecipes.app"
     compileSdk = 35
+
+    val releaseKeystore = signingValue("SUN_RECIPES_KEYSTORE")
+    val releaseKeyAlias = signingValue("SUN_RECIPES_KEY_ALIAS")
+    val releaseStorePassword = signingValue("SUN_RECIPES_STORE_PASSWORD")
+    val releaseKeyPassword = signingValue("SUN_RECIPES_KEY_PASSWORD")
+
+    signingConfigs {
+        create("release") {
+            if (releaseKeystore != null && releaseKeyAlias != null && releaseStorePassword != null && releaseKeyPassword != null) {
+                storeFile = rootProject.file(releaseKeystore)
+                keyAlias = releaseKeyAlias
+                storePassword = releaseStorePassword
+                this.keyPassword = releaseKeyPassword
+            } else {
+                // Keeps debug builds usable; release fails until the signing environment is configured.
+                storeFile = file("$rootDir/.missing-release-keystore.jks")
+            }
+        }
+    }
 
     defaultConfig {
         applicationId = "com.sunrecipes.app"
@@ -20,6 +57,21 @@ android {
     buildFeatures {
         compose = true
         buildConfig = true
+    }
+
+    buildTypes {
+        release {
+            signingConfig = signingConfigs.getByName("release")
+            isMinifyEnabled = false
+        }
+    }
+
+    applicationVariants.all {
+        if (name == "release") {
+            outputs.all {
+                (this as com.android.build.gradle.internal.api.BaseVariantOutputImpl).outputFileName = "sunsrecipes.apk"
+            }
+        }
     }
 
     packaging {

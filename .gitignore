@@ -3,3 +3,6 @@
 .gradle/
 build/
 .kotlin/
+*.jks
+*.keystore
+.env

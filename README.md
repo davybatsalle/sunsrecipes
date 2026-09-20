@@ -46,6 +46,37 @@ Exemple :
 
 Le terminal de génération utilisé ici ne contient pas Gradle ni le SDK Android, donc la compilation finale doit être effectuée dans Android Studio ou dans un environnement CI Android.
 
+## Générer un APK release signé
+
+La signature release utilise un keystore local et des variables d’environnement. Aucun secret n’est stocké dans le dépôt.
+
+Créer le keystore une seule fois :
+
+```bash
+keytool -genkeypair -v -keystore sun-recipes-release.jks -alias sun-recipes -keyalg RSA -keysize 2048 -validity 10000
+```
+
+Avant de construire l’APK, renseignez le fichier `.env` à la racine du projet. Ce fichier est ignoré par Git :
+
+```text
+SUN_RECIPES_KEYSTORE=./sun-recipes-release.jks
+SUN_RECIPES_KEY_ALIAS=sun-recipes
+SUN_RECIPES_STORE_PASSWORD=votre-mot-de-passe
+SUN_RECIPES_KEY_PASSWORD=votre-mot-de-passe
+```
+
+Utilisez un JDK 17 pour Gradle. Sur cette machine, il est installé ici : `C:\Program Files\Eclipse Adoptium\jdk-17.0.20.101-hotspot`.
+
+```bash
+export SUN_RECIPES_KEYSTORE=/chemin/vers/sun-recipes-release.jks
+export SUN_RECIPES_KEY_ALIAS=sun-recipes
+export SUN_RECIPES_STORE_PASSWORD='mot-de-passe-du-keystore'
+export SUN_RECIPES_KEY_PASSWORD='mot-de-passe-de-la-cle'
+./gradlew assembleRelease
+```
+
+Sous PowerShell, utiliser `$env:SUN_RECIPES_KEYSTORE`, `$env:SUN_RECIPES_KEY_ALIAS`, `$env:SUN_RECIPES_STORE_PASSWORD` et `$env:SUN_RECIPES_KEY_PASSWORD`. L’APK signé sera dans `app/build/outputs/apk/release/app-release.apk`. Conservez précieusement le keystore et ses mots de passe : ils sont nécessaires pour publier les mises à jour.
+
 ## Structure
 
 - `app/src/main/java/com/sunrecipes/app/data` : entités, DAO, base Room et export.
