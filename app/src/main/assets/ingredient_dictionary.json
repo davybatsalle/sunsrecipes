@@ -12,6 +12,12 @@
     "Desserts": ["sucre", "farine", "chocolat", "gâteau", "tarte", "dessert", "biscuit", "cookie", "miel", "confiture", "meringue", "sugar", "flour", "chocolate", "cake", "pie", "dessert", "biscuit", "cookie", "honey", "jam", "meringue"],
     "Soupes": ["soupe", "velouté", "bouillon", "potage", "soup", "broth", "stock", "chowder"]
   },
+  "extraIngredients": [
+    {"fr": "oeuf", "en": "egg"},
+    {"fr": "oeufs", "en": "eggs"},
+    {"fr": "œuf", "en": "egg"},
+    {"fr": "œufs", "en": "eggs"}
+  ],
   "ingredients": [
     {"fr": "poulet", "en": "chicken"}, {"fr": "boeuf", "en": "beef"}, {"fr": "bœuf", "en": "beef"}, {"fr": "veau", "en": "veal"}, {"fr": "porc", "en": "pork"}, {"fr": "agneau", "en": "lamb"}, {"fr": "dinde", "en": "turkey"}, {"fr": "canard", "en": "duck"}, {"fr": "lapin", "en": "rabbit"}, {"fr": "jambon", "en": "ham"}, {"fr": "saucisse", "en": "sausage"}, {"fr": "bacon", "en": "bacon"}, {"fr": "viande", "en": "meat"},
     {"fr": "saumon", "en": "salmon"}, {"fr": "thon", "en": "tuna"}, {"fr": "cabillaud", "en": "cod"}, {"fr": "morue", "en": "cod"}, {"fr": "truite", "en": "trout"}, {"fr": "sardine", "en": "sardine"}, {"fr": "anchois", "en": "anchovy"}, {"fr": "maquereau", "en": "mackerel"}, {"fr": "bar", "en": "sea bass"}, {"fr": "crabe", "en": "crab"}, {"fr": "crevette", "en": "shrimp"}, {"fr": "moule", "en": "mussel"}, {"fr": "huître", "en": "oyster"}, {"fr": "calamar", "en": "squid"}, {"fr": "poisson", "en": "fish"}, {"fr": "fruits de mer", "en": "seafood"},
