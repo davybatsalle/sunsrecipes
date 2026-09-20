@@ -465,8 +465,8 @@ private fun RecipeEntity.withFrenchIngredients(value: String): RecipeEntity {
     }
     return copy(
         ingredientsFrenchJson = RecipeContent.encodeIngredients(ingredients),
-        ingredientOne = ingredients.getOrNull(0)?.name ?: ingredientOne,
-        ingredientTwo = ingredients.getOrNull(1)?.name ?: ingredientTwo
+        ingredientOne = ingredients.getOrNull(0)?.name.orEmpty(),
+        ingredientTwo = ingredients.getOrNull(1)?.name.orEmpty()
     )
 }
 
