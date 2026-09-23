@@ -24,12 +24,16 @@ class RecipeRepository(private val context: Context) {
     private val importMutex = Mutex()
 
     fun observeRecipes(query: String): Flow<List<RecipeEntity>> {
-        val terms = query.trim().split(Regex("\\s+")).filter(String::isNotBlank).map(::normalize)
+        val trimmedQuery = query.trim()
+        val exactFamily = RecipeFamilies.allowed.firstOrNull { normalize(it) == normalize(trimmedQuery) }
+        val terms = trimmedQuery.split(Regex("\\s+")).filter(String::isNotBlank).map(::normalize)
         return dao.observeAll().map { recipes ->
-            if (terms.isEmpty()) {
-                recipes
-            } else {
-                recipes.filter { recipe ->
+            when {
+                exactFamily != null -> recipes.filter { recipe ->
+                    exactFamily in RecipeFamilies.decode(recipe.familiesJson, recipe.family)
+                }
+                terms.isEmpty() -> recipes
+                else -> recipes.filter { recipe ->
                     val searchableText = normalize(
                         listOf(
                             recipe.name,
