@@ -595,7 +595,7 @@ private fun RecipeCard(recipe: RecipeEntity, onDelete: (RecipeEntity) -> Unit, o
                 Spacer(Modifier.height(5.dp))
                 Text(RecipeContent.decodeIngredients(recipe.ingredientsJson).joinToString(" · ") { it.name }, color = coral, style = MaterialTheme.typography.bodyMedium)
                 Spacer(Modifier.height(5.dp))
-                Text(recipe.family, style = MaterialTheme.typography.labelMedium, color = Color(0xFF746A63))
+                Text(RecipeFamilies.decode(recipe.familiesJson, recipe.family).joinToString(", "), style = MaterialTheme.typography.labelMedium, color = Color(0xFF746A63))
             }
             IconButton(onClick = { onDelete(recipe) }) { Icon(Icons.Default.DeleteOutline, "Supprimer") }
         }
