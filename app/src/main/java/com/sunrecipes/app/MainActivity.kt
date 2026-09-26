@@ -41,6 +41,7 @@ import androidx.compose.foundation.gestures.transformable
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.AddAPhoto
+import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.CloudUpload
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Clear
@@ -135,6 +136,8 @@ fun SunRecipesApp(recipeViewModel: RecipeViewModel = viewModel()) {
     var downloadingStartupUpdate by remember { mutableStateOf(false) }
     val startupScope = rememberCoroutineScope()
     val pendingRecipes by recipeViewModel.pendingRecipes.collectAsStateWithLifecycle()
+    val manualEntryOffer by recipeViewModel.manualEntryOffer.collectAsStateWithLifecycle()
+    val isManualEntry by recipeViewModel.isManualEntry.collectAsStateWithLifecycle()
     var cameraGranted by remember { mutableStateOf(ContextCompat.checkSelfPermission(context, Manifest.permission.CAMERA) == PackageManager.PERMISSION_GRANTED) }
     val permissionLauncher = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { cameraGranted = it }
     val backupLauncher = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocumentTree()) { uri -> uri?.let(recipeViewModel::export) }
@@ -185,10 +188,12 @@ fun SunRecipesApp(recipeViewModel: RecipeViewModel = viewModel()) {
         } else if (pendingRecipes.isNotEmpty()) {
             RecipeReviewScreen(
                 recipes = pendingRecipes,
+                manualEntry = isManualEntry,
                 onCancel = {
                     recipeViewModel.cancelPendingScan()
                     showScanner = false
                 },
+                onAddRecipe = recipeViewModel::newManualRecipe,
                 onConfirm = {
                     recipeViewModel.confirmRecipes(it)
                     showScanner = false
@@ -265,6 +270,23 @@ fun SunRecipesApp(recipeViewModel: RecipeViewModel = viewModel()) {
                         enabled = !downloadingStartupUpdate,
                         onClick = { startupRelease = null }
                     ) { Text("Plus tard") }
+                }
+            )
+        }
+        if (manualEntryOffer != null) {
+            AlertDialog(
+                onDismissRequest = recipeViewModel::dismissManualEntryOffer,
+                title = { Text("Analyse impossible") },
+                text = { Text("Voulez-vous renseigner la ou les recette(s) manuellement") },
+                confirmButton = {
+                    TextButton(onClick = recipeViewModel::startManualEntry) { Text("Oui") }
+                },
+                dismissButton = {
+                    TextButton(onClick = {
+                        recipeViewModel.dismissManualEntryOffer()
+                        showScanner = false
+                        showCameraFallback = false
+                    }) { Text("Non") }
                 }
             )
         }
@@ -446,7 +468,9 @@ private fun RecipeHomeScreen(viewModel: RecipeViewModel, onScan: () -> Unit, onB
 @Composable
 private fun RecipeReviewScreen(
     recipes: List<RecipeEntity>,
+    manualEntry: Boolean,
     onCancel: () -> Unit,
+    onAddRecipe: () -> RecipeEntity,
     onConfirm: (List<RecipeEntity>) -> Unit
 ) {
     var drafts by remember(recipes) { mutableStateOf(recipes) }
@@ -455,18 +479,20 @@ private fun RecipeReviewScreen(
         containerColor = paper,
         topBar = {
             TopAppBar(
-                title = { Text("Vérifier le scan") },
+                title = { Text(if (manualEntry) "Saisir les recettes" else "Vérifier le scan") },
                 navigationIcon = { IconButton(onClick = onCancel) { Icon(Icons.AutoMirrored.Filled.ArrowBack, "Annuler") } },
                 actions = { TextButton(onClick = onCancel) { Text("Annuler") } }
             )
         }
     ) { padding ->
         Column(Modifier.padding(padding).fillMaxSize()) {
-            Text(
-                "L’analyse IA peut faire des erreurs. Vérifiez les champs avant d’ajouter la recette.",
-                modifier = Modifier.padding(horizontal = 20.dp, vertical = 12.dp),
-                color = Color(0xFF746A63)
-            )
+            if (!manualEntry) {
+                Text(
+                    "L’analyse IA peut faire des erreurs. Vérifiez les champs avant d’ajouter la recette.",
+                    modifier = Modifier.padding(horizontal = 20.dp, vertical = 12.dp),
+                    color = Color(0xFF746A63)
+                )
+            }
             LazyColumn(
                 modifier = Modifier.weight(1f),
                 contentPadding = PaddingValues(horizontal = 20.dp, vertical = 8.dp),
@@ -483,7 +509,7 @@ private fun RecipeReviewScreen(
                                 label = { Text("Titre") },
                                 singleLine = true
                             )
-                            FamilySelector(recipe.familiesJson, recipe.family) { families ->
+                            FamilySelector(recipe.familiesJson, recipe.family, allowEmpty = manualEntry) { families ->
                                 drafts = drafts.updated(index) { withFamilies(families) }
                             }
                             OutlinedTextField(
@@ -498,11 +524,26 @@ private fun RecipeReviewScreen(
                     }
                 }
             }
-            Button(
-                onClick = { onConfirm(drafts.mapIndexed { index, recipe -> recipe.withFrenchIngredients(ingredientTexts[index]) }) },
-                modifier = Modifier.fillMaxWidth().padding(20.dp)
-            ) {
-                Text("Ajouter au carnet")
+            Column(Modifier.padding(20.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                if (manualEntry) {
+                    TextButton(
+                        onClick = {
+                            drafts = drafts + onAddRecipe()
+                            ingredientTexts = ingredientTexts + ""
+                        },
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Icon(Icons.Default.Add, null)
+                        Spacer(Modifier.width(8.dp))
+                        Text("Ajouter une recette")
+                    }
+                }
+                Button(
+                    onClick = { onConfirm(drafts.mapIndexed { index, recipe -> recipe.withFrenchIngredients(ingredientTexts[index]) }) },
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Text(if (manualEntry) "Enregistrer les recettes" else "Ajouter au carnet")
+                }
             }
         }
     }
@@ -514,15 +555,15 @@ private fun List<RecipeEntity>.updated(index: Int, transform: RecipeEntity.() ->
 private fun String.toAllowedFamily(): String = recipeFamilies.firstOrNull { it.equals(this, ignoreCase = true) } ?: "autres"
 
 @Composable
-private fun FamilySelector(value: String, fallback: String, onChange: (List<String>) -> Unit) {
-    val selected = RecipeFamilies.decode(value, fallback)
+private fun FamilySelector(value: String, fallback: String, allowEmpty: Boolean = false, onChange: (List<String>) -> Unit) {
+    val selected = if (allowEmpty && value == "[]" && fallback.isBlank()) emptyList() else RecipeFamilies.decode(value, fallback)
     Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
         Text("Familles", style = MaterialTheme.typography.labelMedium, color = Color(0xFF746A63))
         recipeFamilies.forEach { family ->
             Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
                 Checkbox(checked = family in selected, onCheckedChange = { checked ->
                     val next = if (checked) (selected + family).distinct() else selected - family
-                    onChange(if (next.isEmpty()) listOf("autres") else next)
+                    onChange(if (next.isEmpty() && !allowEmpty) listOf("autres") else next)
                 })
                 Text(family)
             }
@@ -563,7 +604,7 @@ private fun RecipeEntity.withIngredientSlots(first: String, second: String): Rec
 }
 
 private fun RecipeEntity.withFamilies(families: List<String>): RecipeEntity = copy(
-    family = families.firstOrNull() ?: "autres",
+    family = families.firstOrNull().orEmpty(),
     familiesJson = RecipeFamilies.encode(families)
 )
 

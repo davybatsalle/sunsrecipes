@@ -50,8 +50,8 @@ android {
         applicationId = "com.sunrecipes.app"
         minSdk = 26
         targetSdk = 35
-        versionCode = 11
-        versionName = "1.0.13"
+        versionCode = 12
+        versionName = "1.0.14"
     }
 
     buildFeatures {
